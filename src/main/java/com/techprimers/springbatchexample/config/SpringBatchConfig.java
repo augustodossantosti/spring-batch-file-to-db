@@ -6,32 +6,32 @@ import org.springframework.batch.core.configuration.annotation.EnableBatchProces
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
-import org.springframework.batch.item.ItemProcessor;
-import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.file.FlatFileItemReader;
-import org.springframework.batch.item.file.LineMapper;
-import org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper;
-import org.springframework.batch.item.file.mapping.DefaultLineMapper;
-import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
+import org.springframework.batch.item.file.MultiResourceItemReader;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
 
-import com.techprimers.springbatchexample.model.User;
+import com.techprimers.springbatchexample.model.Model;
 
 @Configuration
 @EnableBatchProcessing
 public class SpringBatchConfig {
 
+   private final Resource[] resources;
+
+   public SpringBatchConfig(@Value("classpath:input/file*.txt") final Resource[] resources) {
+      this.resources = resources;
+   }
+
    @Bean
-   public Job job(final JobBuilderFactory jobBuilderFactory, final StepBuilderFactory stepBuilderFactory,
-           final ItemReader<User> itemReader, final ItemProcessor<User, User> itemProcessor, final ItemWriter<User> itemWriter) {
+   public Job job(final JobBuilderFactory jobBuilderFactory, final StepBuilderFactory stepBuilderFactory, final ItemWriter<Model> itemWriter) {
+
       final Step step = stepBuilderFactory.get("ETL-file-load")
-              .<User, User>chunk(100)
-              .reader(itemReader)
-              .processor(itemProcessor)
+              .<Model, Model>chunk(100)
+              .reader(multiResourceItemReader())
               .writer(itemWriter)
               .build();
 
@@ -42,28 +42,26 @@ public class SpringBatchConfig {
    }
 
    @Bean
-   public FlatFileItemReader<User> fileItemReader(@Value("${input}") final Resource resource) {
-      final FlatFileItemReader<User> flatFileItemReader = new FlatFileItemReader<>();
-      flatFileItemReader.setResource(resource);
-      flatFileItemReader.setName("CSV-Reader");
-      flatFileItemReader.setLinesToSkip(1);
-      flatFileItemReader.setLineMapper(lineMapper());
-      return flatFileItemReader;
+   public MultiResourceItemReader<Model> multiResourceItemReader() {
+      final MultiResourceItemReader<Model> resourceItemReader = new MultiResourceItemReader<>();
+      resourceItemReader.setResources(resources);
+      resourceItemReader.setDelegate(fileItemReader());
+      return resourceItemReader;
    }
 
    @Bean
-   public LineMapper<User> lineMapper() {
-      final DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
-      lineTokenizer.setDelimiter(",");
-      lineTokenizer.setStrict(false);
-      lineTokenizer.setNames("id", "name", "dept", "salary");
+   public FlatFileItemReader<Model> fileItemReader() {
+      final FlatFileItemReader<Model> flatFileItemReader = new FlatFileItemReader<>();
+      flatFileItemReader.setName("CSV-Reader");
+      flatFileItemReader.setLinesToSkip(0);
 
-      final BeanWrapperFieldSetMapper<User> fieldSetMapper = new BeanWrapperFieldSetMapper<>();
-      fieldSetMapper.setTargetType(User.class);
-
-      final DefaultLineMapper<User> defaultLineMapper = new DefaultLineMapper<>();
-      defaultLineMapper.setLineTokenizer(lineTokenizer);
-      defaultLineMapper.setFieldSetMapper(fieldSetMapper);
-      return defaultLineMapper;
+      flatFileItemReader.setLineMapper((line, lineNumber) -> {
+         final Model model = new Model();
+         model.setLine(line);
+         model.setLineNumber(lineNumber);
+         return model;
+      });
+      return flatFileItemReader;
    }
+
 }
